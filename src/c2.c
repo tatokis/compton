@@ -300,16 +300,16 @@ c2h_b_opcmp(c2_b_op_t op1, c2_b_op_t op2) {
 }
 
 static int
-c2_parse_grp(session_t *ps, const char *pattern, int offset, c2_ptr_t *presult, int level);
+c2_parse_group(const char *pattern, int offset, c2_ptr_t *presult, int level);
 
 static int
-c2_parse_target(session_t *ps, const char *pattern, int offset, c2_ptr_t *presult);
+c2_parse_target(const char *pattern, int offset, c2_ptr_t *presult);
 
 static int
 c2_parse_op(const char *pattern, int offset, c2_ptr_t *presult);
 
 static int
-c2_parse_pattern(session_t *ps, const char *pattern, int offset, c2_ptr_t *presult);
+c2_parse_pattern(const char *pattern, int offset, c2_ptr_t *presult);
 
 static int
 c2_parse_legacy(session_t *ps, const char *pattern, int offset, c2_ptr_t *presult);
@@ -372,7 +372,7 @@ c2_parse(session_t *ps, c2_lptr_t **pcondlst, const char *pattern,
   if (strlen(pattern) >= 2 && ':' == pattern[1])
     offset = c2_parse_legacy(ps, pattern, 0, &result);
   else
-    offset = c2_parse_grp(ps, pattern, 0, &result, 0);
+    offset = c2_parse_group(pattern, 0, &result, 0);
 
   if (offset < 0) {
     c2_freep(&result);
@@ -418,7 +418,7 @@ c2_parse(session_t *ps, c2_lptr_t **pcondlst, const char *pattern,
  * @return offset of next character in string
  */
 static int
-c2_parse_grp(session_t *ps, const char *pattern, int offset, c2_ptr_t *presult, int level) {
+c2_parse_group(const char *pattern, int offset, c2_ptr_t *presult, int level) {
   // Check for recursion levels
   if (level > C2_MAX_LEVELS)
     c2_error("Exceeded maximum recursion levels.");
@@ -433,7 +433,7 @@ c2_parse_grp(session_t *ps, const char *pattern, int offset, c2_ptr_t *presult, 
 #define c2_error(format, ...) do { \
   printf_err("Pattern \"%s\" pos %d: " format, pattern, offset, \
       ## __VA_ARGS__); \
-  goto c2_parse_grp_fail; \
+  goto c2_parse_group_fail; \
 } while(0)
 
   // We use a system that a maximum of 2 elements are kept. When we find
@@ -525,24 +525,24 @@ c2_parse_grp(session_t *ps, const char *pattern, int offset, c2_ptr_t *presult, 
 
     // It's a subgroup if it starts with '('
     if ('(' == pattern[offset]) {
-      if ((offset = c2_parse_grp(ps, pattern, offset + 1, pele, level + 1)) < 0)
-        goto c2_parse_grp_fail;
+      if ((offset = c2_parse_group(pattern, offset + 1, pele, level + 1)) < 0)
+        goto c2_parse_group_fail;
     }
     // Otherwise it's a leaf
     else {
-      if ((offset = c2_parse_target(ps, pattern, offset, pele)) < 0)
-        goto c2_parse_grp_fail;
+      if ((offset = c2_parse_target(pattern, offset, pele)) < 0)
+        goto c2_parse_group_fail;
 
       assert(!pele->isbranch && !c2_ptr_isempty(*pele));
 
       if ((offset = c2_parse_op(pattern, offset, pele)) < 0)
-        goto c2_parse_grp_fail;
+        goto c2_parse_group_fail;
 
-      if ((offset = c2_parse_pattern(ps, pattern, offset, pele)) < 0)
-        goto c2_parse_grp_fail;
+      if ((offset = c2_parse_pattern(pattern, offset, pele)) < 0)
+        goto c2_parse_group_fail;
 
       if (!c2_l_postprocess(ps, pele->l))
-        goto c2_parse_grp_fail;
+        goto c2_parse_group_fail;
     }
     // Decrement offset -- we will increment it in loop update
     --offset;
@@ -588,7 +588,7 @@ c2_parse_grp(session_t *ps, const char *pattern, int offset, c2_ptr_t *presult, 
 
   return offset;
 
-c2_parse_grp_fail:
+c2_parse_group_fail:
   c2_freep(&eles[0]);
   c2_freep(&eles[1]);
 
@@ -606,7 +606,7 @@ c2_parse_grp_fail:
  * Parse the target part of a rule.
  */
 static int
-c2_parse_target(session_t *ps, const char *pattern, int offset, c2_ptr_t *presult) {
+c2_parse_target(const char *pattern, int offset, c2_ptr_t *presult) {
   // Initialize leaf
   presult->isbranch = false;
   presult->l = malloc(sizeof(c2_l_t));
@@ -862,7 +862,7 @@ c2_parse_op(const char *pattern, int offset, c2_ptr_t *presult) {
  * Parse the pattern part of a leaf.
  */
 static int
-c2_parse_pattern(session_t *ps, const char *pattern, int offset, c2_ptr_t *presult) {
+c2_parse_pattern(const char *pattern, int offset, c2_ptr_t *presult) {
   c2_l_t * const pleaf = presult->l;
 
   // Exists operator cannot have pattern

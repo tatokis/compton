@@ -33,10 +33,45 @@ parse_cfg_condlst(session_t *ps, const config_t *pcfg, c2_lptr_t **pcondlst,
     const char *name);
 
 void
-parse_config(session_t *ps, struct options_tmp *pcfgtmp);
+parse_config(options_t *ps, struct options_tmp *pcfgtmp);
 #else
-static inline void parse_config(session_t *a, struct options_tmp *b) {
+static inline void parse_config(options_t *a, struct options_tmp *b) {
   (void)a;
   (void)b;
 }
 #endif
+
+/**
+ * Parse a backend option argument.
+ */
+static inline enum backend
+parse_backend(const char *str) {
+  for (enum backend i = 0; BACKEND_STRS[i]; ++i)
+    if (!strcasecmp(str, BACKEND_STRS[i])) {
+      return i;
+    }
+  // Keep compatibility with an old revision containing a spelling mistake...
+  if (!strcasecmp(str, "xr_glx_hybird")) {
+    return BKEND_XR_GLX_HYBRID;
+  }
+  // cju wants to use dashes
+  if (!strcasecmp(str, "xr-glx-hybrid")) {
+    return BKEND_XR_GLX_HYBRID;
+  }
+  printf_errf("(\"%s\"): Invalid backend argument.", str);
+  return NUM_BKEND;
+}
+
+/**
+ * Parse a VSync option argument.
+ */
+static inline enum vsync
+parse_vsync(const char *str) {
+  for (vsync_t i = 0; VSYNC_STRS[i]; ++i)
+    if (!strcasecmp(str, VSYNC_STRS[i])) {
+      return i;
+    }
+
+  printf_errf("(\"%s\"): Invalid vsync argument.", str);
+  return NUM_VSYNC;
+}

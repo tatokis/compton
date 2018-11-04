@@ -35,9 +35,6 @@ static void
 configure_win(session_t *ps, xcb_configure_notify_event_t *ce);
 
 static void
-get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass);
-
-static void
 update_refresh_rate(session_t *ps);
 
 static bool
@@ -3793,7 +3790,7 @@ write_pid(session_t *ps) {
  * Process arguments and configuration files.
  */
 static void
-get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
+get_cfg(options_t *o, int argc, char *const *argv, bool first_pass) {
   static const char *shortopts = "D:I:O:d:r:o:m:l:t:i:e:hscnfFCaSzGb";
   static const struct option longopts[] = {
     { "help", no_argument, NULL, 'h' },
@@ -3886,7 +3883,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { NULL, 0, NULL, 0 },
   };
 
-  int o = 0, longopt_idx = -1, i = 0;
+  int opt = 0, longopt_idx = -1, i = 0;
 
   if (first_pass) {
     // Pre-parse the commandline arguments to check for --config and invalid
@@ -3895,22 +3892,22 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     // arguments
     optind = 1;
     while (-1 !=
-        (o = getopt_long(argc, argv, shortopts, longopts, &longopt_idx))) {
-      if (256 == o)
-        ps->o.config_file = mstrcpy(optarg);
-      else if ('d' == o)
-        ps->o.display = mstrcpy(optarg);
-      else if ('S' == o)
-        ps->o.synchronize = true;
-      else if (314 == o)
-        ps->o.show_all_xerrors = true;
-      else if (318 == o) {
+        (opt = getopt_long(argc, argv, shortopts, longopts, &longopt_idx))) {
+      if (256 == opt)
+        o->config_file = mstrcpy(optarg);
+      else if ('d' == opt)
+        o->display = mstrcpy(optarg);
+      else if ('S' == opt)
+        o->synchronize = true;
+      else if (314 == opt)
+        o->show_all_xerrors = true;
+      else if (318 == opt) {
         printf("%s\n", COMPTON_VERSION);
         exit(0);
       }
-      else if (320 == o)
-        ps->o.no_name_pixmap = true;
-      else if ('?' == o || ':' == o)
+      else if (320 == opt)
+        o->no_name_pixmap = true;
+      else if ('?' == opt || ':' == opt)
         usage(1);
     }
 
@@ -3930,9 +3927,9 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
   char *lc_numeric_old = mstrcpy(setlocale(LC_NUMERIC, NULL));
 
   for (i = 0; i < NUM_WINTYPES; ++i) {
-    ps->o.wintype_fade[i] = false;
-    ps->o.wintype_shadow[i] = false;
-    ps->o.wintype_opacity[i] = NAN;
+    o->wintype_fade[i] = false;
+    o->wintype_shadow[i] = false;
+    o->wintype_opacity[i] = NAN;
   }
 
   // Enforce LC_NUMERIC locale "C" here to make sure dots are recognized
@@ -3947,14 +3944,14 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     "without this feature, please feel free to open a bug report.";
   optind = 1;
   while (-1 !=
-      (o = getopt_long(argc, argv, shortopts, longopts, &longopt_idx))) {
+      (opt = getopt_long(argc, argv, shortopts, longopts, &longopt_idx))) {
     long val = 0;
-    switch (o) {
-#define P_CASEBOOL(idx, option) case idx: ps->o.option = true; break
+    switch (opt) {
+#define P_CASEBOOL(idx, option) case idx: o->option = true; break
 #define P_CASELONG(idx, option) \
       case idx: \
         if (!parse_long(optarg, &val)) exit(1); \
-        ps->o.option = val; \
+        o->option = val; \
         break
 
       // Short options
@@ -3969,10 +3966,10 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         break;
       P_CASELONG('D', fade_delta);
       case 'I':
-        ps->o.fade_in_step = normalize_d(atof(optarg)) * OPAQUE;
+        o->fade_in_step = normalize_d(atof(optarg)) * OPAQUE;
         break;
       case 'O':
-        ps->o.fade_out_step = normalize_d(atof(optarg)) * OPAQUE;
+        o->fade_out_step = normalize_d(atof(optarg)) * OPAQUE;
         break;
       case 'c':
         shadow_enable = true;
@@ -3992,15 +3989,15 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         break;
       P_CASELONG('r', shadow_radius);
       case 'o':
-        ps->o.shadow_opacity = atof(optarg);
+        o->shadow_opacity = atof(optarg);
         break;
       P_CASELONG('l', shadow_offset_x);
       P_CASELONG('t', shadow_offset_y);
       case 'i':
-        ps->o.inactive_opacity = (normalize_d(atof(optarg)) * OPAQUE);
+        o->inactive_opacity = (normalize_d(atof(optarg)) * OPAQUE);
         break;
       case 'e':
-        ps->o.frame_opacity = atof(optarg);
+        o->frame_opacity = atof(optarg);
         break;
       case 'z':
         printf_errf("(): clear-shadow is removed, shadows are automatically cleared now.");
@@ -4017,25 +4014,25 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         break;
       case 257:
         // --shadow-red
-        ps->o.shadow_red = atof(optarg);
+        o->shadow_red = atof(optarg);
         break;
       case 258:
         // --shadow-green
-        ps->o.shadow_green = atof(optarg);
+        o->shadow_green = atof(optarg);
         break;
       case 259:
         // --shadow-blue
-        ps->o.shadow_blue = atof(optarg);
+        o->shadow_blue = atof(optarg);
         break;
       P_CASEBOOL(260, inactive_opacity_override);
       case 261:
         // --inactive-dim
-        ps->o.inactive_dim = atof(optarg);
+        o->inactive_dim = atof(optarg);
         break;
       P_CASEBOOL(262, mark_wmwin_focused);
       case 263:
         // --shadow-exclude
-        condlst_add(ps, &ps->o.shadow_blacklist, optarg);
+        condlst_add(ps, &o->shadow_blacklist, optarg);
         break;
       P_CASEBOOL(264, mark_ovredir_focused);
       P_CASEBOOL(265, no_fading_openclose);
@@ -4045,12 +4042,11 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       P_CASELONG(269, refresh_rate);
       case 270:
         // --vsync
-        if (!parse_vsync(ps, optarg))
-          exit(1);
+        o->vsync = parse_vsync(optarg);
         break;
       case 271:
         // --alpha-step
-        ps->o.alpha_step = atof(optarg);
+        o->alpha_step = atof(optarg);
         break;
       case 272:
         printf_errf("(): use of --dbe is deprecated");
@@ -4065,7 +4061,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       P_CASEBOOL(278, unredir_if_possible);
       case 279:
         // --focus-exclude
-        condlst_add(ps, &ps->o.focus_blacklist, optarg);
+        condlst_add(ps, &o->focus_blacklist, optarg);
         break;
       P_CASEBOOL(280, inactive_dim_fixed);
       P_CASEBOOL(281, detect_transient);
@@ -4076,20 +4072,19 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       P_CASEBOOL(286, dbus);
       case 287:
         // --logpath
-        ps->o.logpath = mstrcpy(optarg);
+        o->logpath = mstrcpy(optarg);
         break;
       case 288:
         // --invert-color-include
-        condlst_add(ps, &ps->o.invert_color_list, optarg);
+        condlst_add(ps, &o->invert_color_list, optarg);
         break;
       case 289:
         // --opengl
-        ps->o.backend = BKEND_GLX;
+        o->backend = BKEND_GLX;
         break;
       case 290:
         // --backend
-        if (!parse_backend(ps, optarg))
-          exit(1);
+        o->backend = parse_backend(optarg);
         break;
       P_CASEBOOL(291, glx_no_stencil);
       case 292:
@@ -4098,18 +4093,18 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       P_CASELONG(293, benchmark);
       case 294:
         // --benchmark-wid
-        ps->o.benchmark_wid = strtol(optarg, NULL, 0);
+        o->benchmark_wid = strtol(optarg, NULL, 0);
         break;
       case 295:
         printf_errf("(): --glx-use-copysubbuffermesa %s", deprecation_message);
         break;
       case 296:
         // --blur-background-exclude
-        condlst_add(ps, &ps->o.blur_background_blacklist, optarg);
+        condlst_add(ps, &o->blur_background_blacklist, optarg);
         break;
       case 297:
         // --active-opacity
-        ps->o.active_opacity = (normalize_d(atof(optarg)) * OPAQUE);
+        o->active_opacity = (normalize_d(atof(optarg)) * OPAQUE);
         break;
       P_CASEBOOL(298, glx_no_rebind_pixmap);
       case 299:
@@ -4119,11 +4114,11 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         break;
       case 300:
         // --fade-exclude
-        condlst_add(ps, &ps->o.fade_blacklist, optarg);
+        condlst_add(ps, &o->fade_blacklist, optarg);
         break;
       case 301:
         // --blur-kern
-        if (!parse_conv_kern_lst(ps, optarg, ps->o.blur_kerns, MAX_BLUR_PASS))
+        if (!parse_conv_kern_lst(ps, optarg, o->blur_kerns, MAX_BLUR_PASS))
           exit(1);
         break;
       P_CASELONG(302, resize_damage);
@@ -4135,23 +4130,23 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         break;
       case 305:
         // --shadow-exclude-reg
-        ps->o.shadow_exclude_reg_str = strdup(optarg);
+        o->shadow_exclude_reg_str = strdup(optarg);
         printf_err("--shadow-exclude-reg is deprecated.\n"
                    "You are likely better off using --shadow-exclude anyway");
         break;
       case 306:
         // --paint-exclude
-        condlst_add(ps, &ps->o.paint_blacklist, optarg);
+        condlst_add(ps, &o->paint_blacklist, optarg);
         break;
       P_CASEBOOL(307, xinerama_shadow_crop);
       case 308:
         // --unredir-if-possible-exclude
-        condlst_add(ps, &ps->o.unredir_if_possible_blacklist, optarg);
+        condlst_add(ps, &o->unredir_if_possible_blacklist, optarg);
         break;
       P_CASELONG(309, unredir_if_possible_delay);
       case 310:
         // --write-pid-path
-        ps->o.write_pid_path = mstrcpy(optarg);
+        o->write_pid_path = mstrcpy(optarg);
         break;
       P_CASEBOOL(311, vsync_use_glfinish);
       case 312:
@@ -4163,14 +4158,14 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       P_CASEBOOL(315, no_fading_destroyed_argb);
       P_CASEBOOL(316, force_win_blend);
       case 317:
-        ps->o.glx_fshader_win_str = mstrcpy(optarg);
+        o->glx_fshader_win_str = mstrcpy(optarg);
         break;
       P_CASEBOOL(319, no_x_selection);
       P_CASEBOOL(731, reredir_on_root_change);
       P_CASEBOOL(732, glx_reinit_on_root_change);
       P_CASEBOOL(800, monitor_repaint);
       case 801:
-        ps->o.print_diagnostics = true;
+        o->print_diagnostics = true;
         break;
       default:
         usage(1);
@@ -4183,54 +4178,54 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
   setlocale(LC_NUMERIC, lc_numeric_old);
   free(lc_numeric_old);
 
-  if (ps->o.monitor_repaint && ps->o.backend != BKEND_XRENDER)
+  if (o->monitor_repaint && o->backend != BKEND_XRENDER)
     printf_errf("(): --monitor-repaint has no effect when backend is not xrender");
 
   // Range checking and option assignments
-  ps->o.fade_delta = max_i(ps->o.fade_delta, 1);
-  ps->o.shadow_radius = max_i(ps->o.shadow_radius, 1);
-  ps->o.shadow_red = normalize_d(ps->o.shadow_red);
-  ps->o.shadow_green = normalize_d(ps->o.shadow_green);
-  ps->o.shadow_blue = normalize_d(ps->o.shadow_blue);
-  ps->o.inactive_dim = normalize_d(ps->o.inactive_dim);
-  ps->o.frame_opacity = normalize_d(ps->o.frame_opacity);
-  ps->o.shadow_opacity = normalize_d(ps->o.shadow_opacity);
+  o->fade_delta = max_i(o->fade_delta, 1);
+  o->shadow_radius = max_i(o->shadow_radius, 1);
+  o->shadow_red = normalize_d(o->shadow_red);
+  o->shadow_green = normalize_d(o->shadow_green);
+  o->shadow_blue = normalize_d(o->shadow_blue);
+  o->inactive_dim = normalize_d(o->inactive_dim);
+  o->frame_opacity = normalize_d(o->frame_opacity);
+  o->shadow_opacity = normalize_d(o->shadow_opacity);
   cfgtmp.menu_opacity = normalize_d(cfgtmp.menu_opacity);
-  ps->o.refresh_rate = normalize_i_range(ps->o.refresh_rate, 0, 300);
-  ps->o.alpha_step = normalize_d_range(ps->o.alpha_step, 0.01, 1.0);
+  o->refresh_rate = normalize_i_range(o->refresh_rate, 0, 300);
+  o->alpha_step = normalize_d_range(o->alpha_step, 0.01, 1.0);
   if (shadow_enable)
-    wintype_arr_enable(ps->o.wintype_shadow);
-  ps->o.wintype_shadow[WINTYPE_DESKTOP] = false;
+    wintype_arr_enable(o->wintype_shadow);
+  o->wintype_shadow[WINTYPE_DESKTOP] = false;
   if (cfgtmp.no_dock_shadow)
-    ps->o.wintype_shadow[WINTYPE_DOCK] = false;
+    o->wintype_shadow[WINTYPE_DOCK] = false;
   if (cfgtmp.no_dnd_shadow)
-    ps->o.wintype_shadow[WINTYPE_DND] = false;
+    o->wintype_shadow[WINTYPE_DND] = false;
   if (fading_enable)
-    wintype_arr_enable(ps->o.wintype_fade);
+    wintype_arr_enable(o->wintype_fade);
   if (!safe_isnan(cfgtmp.menu_opacity)) {
-    ps->o.wintype_opacity[WINTYPE_DROPDOWN_MENU] = cfgtmp.menu_opacity;
-    ps->o.wintype_opacity[WINTYPE_POPUP_MENU] = cfgtmp.menu_opacity;
+    o->wintype_opacity[WINTYPE_DROPDOWN_MENU] = cfgtmp.menu_opacity;
+    o->wintype_opacity[WINTYPE_POPUP_MENU] = cfgtmp.menu_opacity;
   }
 
   // --blur-background-frame implies --blur-background
-  if (ps->o.blur_background_frame)
-    ps->o.blur_background = true;
+  if (o->blur_background_frame)
+    o->blur_background = true;
 
   // Other variables determined by options
 
   // Determine whether we need to track focus changes
-  if (ps->o.inactive_opacity != ps->o.active_opacity ||
-      ps->o.inactive_dim) {
-    ps->o.track_focus = true;
+  if (o->inactive_opacity != o->active_opacity ||
+      o->inactive_dim) {
+    o->track_focus = true;
   }
 
   // Determine whether we track window grouping
-  if (ps->o.detect_transient || ps->o.detect_client_leader) {
-    ps->o.track_leader = true;
+  if (o->detect_transient || o->detect_client_leader) {
+    o->track_leader = true;
   }
 
   // Fill default blur kernel
-  if (ps->o.blur_background && !ps->o.blur_kerns[0]) {
+  if (o->blur_background && !o->blur_kerns[0]) {
     // Convolution filter parameter (box blur)
     // gaussian or binomial filters are definitely superior, yet looks
     // like they aren't supported as of xorg-server-1.13.0
@@ -4243,17 +4238,15 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       DOUBLE_TO_XFIXED(1), DOUBLE_TO_XFIXED(1), DOUBLE_TO_XFIXED(1),
       DOUBLE_TO_XFIXED(1), DOUBLE_TO_XFIXED(1), DOUBLE_TO_XFIXED(1),
     };
-    ps->o.blur_kerns[0] = malloc(sizeof(convolution_blur));
-    if (!ps->o.blur_kerns[0]) {
+    o->blur_kerns[0] = malloc(sizeof(convolution_blur));
+    if (!o->blur_kerns[0]) {
       printf_errf("(): Failed to allocate memory for convolution kernel.");
       exit(1);
     }
-    memcpy(ps->o.blur_kerns[0], &convolution_blur, sizeof(convolution_blur));
+    memcpy(o->blur_kerns[0], &convolution_blur, sizeof(convolution_blur));
   }
 
-  rebuild_shadow_exclude_reg(ps);
-
-  if (ps->o.resize_damage < 0)
+  if (o->resize_damage < 0)
     printf_errf("(): Negative --resize-damage does not work correctly.");
 }
 
@@ -5158,7 +5151,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
   ps->o.wintype_focus[WINTYPE_UTILITY] = false;
 
   // First pass
-  get_cfg(ps, argc, argv, true);
+  get_cfg(&ps->o, argc, argv, true);
 
   // Inherit old Display if possible, primarily for resource leak checking
   if (ps_old && ps_old->dpy)
@@ -5279,7 +5272,12 @@ session_init(session_t *ps_old, int argc, char **argv) {
   }
 
   // Second pass
-  get_cfg(ps, argc, argv, false);
+  get_cfg(&ps->o, argc, argv, false);
+
+  if (ps->o.backend >= NUM_BKEND || ps->o.vsync >= NUM_VSYNC)
+    exit(1);
+
+  rebuild_shadow_exclude_reg(ps);
 
   // Query X Shape
   ext_info = xcb_get_extension_data(ps->c, &xcb_shape_id);

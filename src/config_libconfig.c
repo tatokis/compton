@@ -157,7 +157,7 @@ parse_cfg_condlst_opct(session_t *ps, const config_t *pcfg, const char *name) {
  * Parse a configuration file from default location.
  */
 void
-parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
+parse_config(options_t *o, struct options_tmp *pcfgtmp) {
   char *path = NULL;
   FILE *f;
   config_t cfg;
@@ -168,13 +168,13 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   // anything
   const char *sval = NULL;
 
-  f = open_config_file(ps->o.config_file, &path);
+  f = open_config_file(o->config_file, &path);
   if (!f) {
-    if (ps->o.config_file) {
+    if (o->config_file) {
       printf_errfq(1, "(): Failed to read configuration file \"%s\".",
-          ps->o.config_file);
-      free(ps->o.config_file);
-      ps->o.config_file = NULL;
+          o->config_file);
+      free(o->config_file);
+      o->config_file = NULL;
     }
     return;
   }
@@ -206,9 +206,9 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   }
   config_set_auto_convert(&cfg, 1);
 
-  if (path != ps->o.config_file) {
-    free(ps->o.config_file);
-    ps->o.config_file = path;
+  if (path != o->config_file) {
+    free(o->config_file);
+    o->config_file = path;
   }
 
   // Get options from the configuration file. We don't do range checking
@@ -216,32 +216,32 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
 
   // -D (fade_delta)
   if (config_lookup_int(&cfg, "fade-delta", &ival))
-    ps->o.fade_delta = ival;
+    o->fade_delta = ival;
   // -I (fade_in_step)
   if (config_lookup_float(&cfg, "fade-in-step", &dval))
-    ps->o.fade_in_step = normalize_d(dval) * OPAQUE;
+    o->fade_in_step = normalize_d(dval) * OPAQUE;
   // -O (fade_out_step)
   if (config_lookup_float(&cfg, "fade-out-step", &dval))
-    ps->o.fade_out_step = normalize_d(dval) * OPAQUE;
+    o->fade_out_step = normalize_d(dval) * OPAQUE;
   // -r (shadow_radius)
-  config_lookup_int(&cfg, "shadow-radius", &ps->o.shadow_radius);
+  config_lookup_int(&cfg, "shadow-radius", &o->shadow_radius);
   // -o (shadow_opacity)
-  config_lookup_float(&cfg, "shadow-opacity", &ps->o.shadow_opacity);
+  config_lookup_float(&cfg, "shadow-opacity", &o->shadow_opacity);
   // -l (shadow_offset_x)
-  config_lookup_int(&cfg, "shadow-offset-x", &ps->o.shadow_offset_x);
+  config_lookup_int(&cfg, "shadow-offset-x", &o->shadow_offset_x);
   // -t (shadow_offset_y)
-  config_lookup_int(&cfg, "shadow-offset-y", &ps->o.shadow_offset_y);
+  config_lookup_int(&cfg, "shadow-offset-y", &o->shadow_offset_y);
   // -i (inactive_opacity)
   if (config_lookup_float(&cfg, "inactive-opacity", &dval))
-    ps->o.inactive_opacity = normalize_d(dval) * OPAQUE;
+    o->inactive_opacity = normalize_d(dval) * OPAQUE;
   // --active_opacity
   if (config_lookup_float(&cfg, "active-opacity", &dval))
-    ps->o.active_opacity = normalize_d(dval) * OPAQUE;
+    o->active_opacity = normalize_d(dval) * OPAQUE;
   // -e (frame_opacity)
-  config_lookup_float(&cfg, "frame-opacity", &ps->o.frame_opacity);
+  config_lookup_float(&cfg, "frame-opacity", &o->frame_opacity);
   // -c (shadow_enable)
   if (config_lookup_bool(&cfg, "shadow", &ival) && ival)
-    wintype_arr_enable(ps->o.wintype_shadow);
+    wintype_arr_enable(o->wintype_shadow);
   // -C (no_dock_shadow)
   lcfg_lookup_bool(&cfg, "no-dock-shadow", &pcfgtmp->no_dock_shadow);
   // -G (no_dnd_shadow)
@@ -250,109 +250,109 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   config_lookup_float(&cfg, "menu-opacity", &pcfgtmp->menu_opacity);
   // -f (fading_enable)
   if (config_lookup_bool(&cfg, "fading", &ival) && ival)
-    wintype_arr_enable(ps->o.wintype_fade);
+    wintype_arr_enable(o->wintype_fade);
   // --no-fading-open-close
-  lcfg_lookup_bool(&cfg, "no-fading-openclose", &ps->o.no_fading_openclose);
+  lcfg_lookup_bool(&cfg, "no-fading-openclose", &o->no_fading_openclose);
   // --no-fading-destroyed-argb
   lcfg_lookup_bool(&cfg, "no-fading-destroyed-argb",
-      &ps->o.no_fading_destroyed_argb);
+      &o->no_fading_destroyed_argb);
   // --shadow-red
-  config_lookup_float(&cfg, "shadow-red", &ps->o.shadow_red);
+  config_lookup_float(&cfg, "shadow-red", &o->shadow_red);
   // --shadow-green
-  config_lookup_float(&cfg, "shadow-green", &ps->o.shadow_green);
+  config_lookup_float(&cfg, "shadow-green", &o->shadow_green);
   // --shadow-blue
-  config_lookup_float(&cfg, "shadow-blue", &ps->o.shadow_blue);
+  config_lookup_float(&cfg, "shadow-blue", &o->shadow_blue);
   // --shadow-exclude-reg
   if (config_lookup_string(&cfg, "shadow-exclude-reg", &sval))
-    ps->o.shadow_exclude_reg_str = strdup(sval);
+    o->shadow_exclude_reg_str = strdup(sval);
   // --inactive-opacity-override
   lcfg_lookup_bool(&cfg, "inactive-opacity-override",
-      &ps->o.inactive_opacity_override);
+      &o->inactive_opacity_override);
   // --inactive-dim
-  config_lookup_float(&cfg, "inactive-dim", &ps->o.inactive_dim);
+  config_lookup_float(&cfg, "inactive-dim", &o->inactive_dim);
   // --mark-wmwin-focused
-  lcfg_lookup_bool(&cfg, "mark-wmwin-focused", &ps->o.mark_wmwin_focused);
+  lcfg_lookup_bool(&cfg, "mark-wmwin-focused", &o->mark_wmwin_focused);
   // --mark-ovredir-focused
   lcfg_lookup_bool(&cfg, "mark-ovredir-focused",
-      &ps->o.mark_ovredir_focused);
+      &o->mark_ovredir_focused);
   // --shadow-ignore-shaped
   lcfg_lookup_bool(&cfg, "shadow-ignore-shaped",
-      &ps->o.shadow_ignore_shaped);
+      &o->shadow_ignore_shaped);
   // --detect-rounded-corners
   lcfg_lookup_bool(&cfg, "detect-rounded-corners",
-      &ps->o.detect_rounded_corners);
+      &o->detect_rounded_corners);
   // --xinerama-shadow-crop
   lcfg_lookup_bool(&cfg, "xinerama-shadow-crop",
-      &ps->o.xinerama_shadow_crop);
+      &o->xinerama_shadow_crop);
   // --detect-client-opacity
   lcfg_lookup_bool(&cfg, "detect-client-opacity",
-      &ps->o.detect_client_opacity);
+      &o->detect_client_opacity);
   // --refresh-rate
-  config_lookup_int(&cfg, "refresh-rate", &ps->o.refresh_rate);
+  config_lookup_int(&cfg, "refresh-rate", &o->refresh_rate);
   // --vsync
-  if (config_lookup_string(&cfg, "vsync", &sval) && !parse_vsync(ps, sval))
-    exit(1);
+  if (config_lookup_string(&cfg, "vsync", &sval))
+    o->vsync = parse_vsync(sval);
   // --backend
-  if (config_lookup_string(&cfg, "backend", &sval) && !parse_backend(ps, sval))
-    exit(1);
+  if (config_lookup_string(&cfg, "backend", &sval))
+    o->backend = parse_backend(sval);
   // --alpha-step
-  config_lookup_float(&cfg, "alpha-step", &ps->o.alpha_step);
+  config_lookup_float(&cfg, "alpha-step", &o->alpha_step);
   // --sw-opti
-  lcfg_lookup_bool(&cfg, "sw-opti", &ps->o.sw_opti);
+  lcfg_lookup_bool(&cfg, "sw-opti", &o->sw_opti);
   // --use-ewmh-active-win
   lcfg_lookup_bool(&cfg, "use-ewmh-active-win",
-      &ps->o.use_ewmh_active_win);
+      &o->use_ewmh_active_win);
   // --unredir-if-possible
   lcfg_lookup_bool(&cfg, "unredir-if-possible",
-      &ps->o.unredir_if_possible);
+      &o->unredir_if_possible);
   // --unredir-if-possible-delay
   if (config_lookup_int(&cfg, "unredir-if-possible-delay", &ival))
-    ps->o.unredir_if_possible_delay = ival;
+    o->unredir_if_possible_delay = ival;
   // --inactive-dim-fixed
-  lcfg_lookup_bool(&cfg, "inactive-dim-fixed", &ps->o.inactive_dim_fixed);
+  lcfg_lookup_bool(&cfg, "inactive-dim-fixed", &o->inactive_dim_fixed);
   // --detect-transient
-  lcfg_lookup_bool(&cfg, "detect-transient", &ps->o.detect_transient);
+  lcfg_lookup_bool(&cfg, "detect-transient", &o->detect_transient);
   // --detect-client-leader
   lcfg_lookup_bool(&cfg, "detect-client-leader",
-      &ps->o.detect_client_leader);
+      &o->detect_client_leader);
   // --shadow-exclude
-  parse_cfg_condlst(ps, &cfg, &ps->o.shadow_blacklist, "shadow-exclude");
+  parse_cfg_condlst(ps, &cfg, &o->shadow_blacklist, "shadow-exclude");
   // --fade-exclude
-  parse_cfg_condlst(ps, &cfg, &ps->o.fade_blacklist, "fade-exclude");
+  parse_cfg_condlst(ps, &cfg, &o->fade_blacklist, "fade-exclude");
   // --focus-exclude
-  parse_cfg_condlst(ps, &cfg, &ps->o.focus_blacklist, "focus-exclude");
+  parse_cfg_condlst(ps, &cfg, &o->focus_blacklist, "focus-exclude");
   // --invert-color-include
-  parse_cfg_condlst(ps, &cfg, &ps->o.invert_color_list, "invert-color-include");
+  parse_cfg_condlst(ps, &cfg, &o->invert_color_list, "invert-color-include");
   // --blur-background-exclude
-  parse_cfg_condlst(ps, &cfg, &ps->o.blur_background_blacklist, "blur-background-exclude");
+  parse_cfg_condlst(ps, &cfg, &o->blur_background_blacklist, "blur-background-exclude");
   // --opacity-rule
   parse_cfg_condlst_opct(ps, &cfg, "opacity-rule");
   // --unredir-if-possible-exclude
-  parse_cfg_condlst(ps, &cfg, &ps->o.unredir_if_possible_blacklist, "unredir-if-possible-exclude");
+  parse_cfg_condlst(ps, &cfg, &o->unredir_if_possible_blacklist, "unredir-if-possible-exclude");
   // --blur-background
-  lcfg_lookup_bool(&cfg, "blur-background", &ps->o.blur_background);
+  lcfg_lookup_bool(&cfg, "blur-background", &o->blur_background);
   // --blur-background-frame
   lcfg_lookup_bool(&cfg, "blur-background-frame",
-      &ps->o.blur_background_frame);
+      &o->blur_background_frame);
   // --blur-background-fixed
   lcfg_lookup_bool(&cfg, "blur-background-fixed",
-      &ps->o.blur_background_fixed);
+      &o->blur_background_fixed);
   // --blur-kern
   if (config_lookup_string(&cfg, "blur-kern", &sval)
-      && !parse_conv_kern_lst(ps, sval, ps->o.blur_kerns, MAX_BLUR_PASS))
+      && !parse_conv_kern_lst(ps, sval, o->blur_kerns, MAX_BLUR_PASS))
     exit(1);
   // --resize-damage
-  config_lookup_int(&cfg, "resize-damage", &ps->o.resize_damage);
+  config_lookup_int(&cfg, "resize-damage", &o->resize_damage);
   // --glx-no-stencil
-  lcfg_lookup_bool(&cfg, "glx-no-stencil", &ps->o.glx_no_stencil);
+  lcfg_lookup_bool(&cfg, "glx-no-stencil", &o->glx_no_stencil);
   // --glx-no-rebind-pixmap
-  lcfg_lookup_bool(&cfg, "glx-no-rebind-pixmap", &ps->o.glx_no_rebind_pixmap);
+  lcfg_lookup_bool(&cfg, "glx-no-rebind-pixmap", &o->glx_no_rebind_pixmap);
   // --glx-swap-method
   if (config_lookup_string(&cfg, "glx-swap-method", &sval)
       && !parse_glx_swap_method(ps, sval))
     exit(1);
   // --glx-use-gpushader4
-  lcfg_lookup_bool(&cfg, "glx-use-gpushader4", &ps->o.glx_use_gpushader4);
+  lcfg_lookup_bool(&cfg, "glx-use-gpushader4", &o->glx_use_gpushader4);
 
   if (lcfg_lookup_bool(&cfg, "clear-shadow", &bval))
     printf_errf("(): \"clear-shadow\" is removed as an option, and is always"
@@ -380,15 +380,15 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
     free(str);
     if (setting) {
       if (config_setting_lookup_bool(setting, "shadow", &ival))
-        ps->o.wintype_shadow[i] = (bool) ival;
+        o->wintype_shadow[i] = (bool) ival;
       if (config_setting_lookup_bool(setting, "fade", &ival))
-        ps->o.wintype_fade[i] = (bool) ival;
+        o->wintype_fade[i] = (bool) ival;
       if (config_setting_lookup_bool(setting, "focus", &ival))
-        ps->o.wintype_focus[i] = (bool) ival;
+        o->wintype_focus[i] = (bool) ival;
 
       double fval;
       if (config_setting_lookup_float(setting, "opacity", &fval))
-        ps->o.wintype_opacity[i] = normalize_d(fval);
+        o->wintype_opacity[i] = normalize_d(fval);
     }
   }
 

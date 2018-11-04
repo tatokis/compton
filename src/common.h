@@ -259,7 +259,7 @@ enum wincond_type {
 #define CONDF_IGNORECASE 0x0001
 
 /// VSync modes.
-typedef enum {
+typedef enum vsync {
   VSYNC_NONE,
   VSYNC_DRM,
   VSYNC_OPENGL,
@@ -433,7 +433,7 @@ typedef struct ev_session_idle ev_session_idle;
 typedef struct ev_session_prepare ev_session_prepare;
 
 /// Structure representing all options.
-typedef struct options_t {
+typedef struct options {
   // === Debugging ===
   bool monitor_repaint;
   bool print_diagnostics;
@@ -1237,45 +1237,6 @@ mstrextend(char **psrc1, const char *src2) {
       char);
 
   strcat(*psrc1, src2);
-}
-
-/**
- * Parse a VSync option argument.
- */
-static inline bool
-parse_vsync(session_t *ps, const char *str) {
-  for (vsync_t i = 0; VSYNC_STRS[i]; ++i)
-    if (!strcasecmp(str, VSYNC_STRS[i])) {
-      ps->o.vsync = i;
-      return true;
-    }
-
-  printf_errf("(\"%s\"): Invalid vsync argument.", str);
-  return false;
-}
-
-/**
- * Parse a backend option argument.
- */
-static inline bool
-parse_backend(session_t *ps, const char *str) {
-  for (enum backend i = 0; BACKEND_STRS[i]; ++i)
-    if (!strcasecmp(str, BACKEND_STRS[i])) {
-      ps->o.backend = i;
-      return true;
-    }
-  // Keep compatibility with an old revision containing a spelling mistake...
-  if (!strcasecmp(str, "xr_glx_hybird")) {
-    ps->o.backend = BKEND_XR_GLX_HYBRID;
-    return true;
-  }
-  // cju wants to use dashes
-  if (!strcasecmp(str, "xr-glx-hybrid")) {
-    ps->o.backend = BKEND_XR_GLX_HYBRID;
-    return true;
-  }
-  printf_errf("(\"%s\"): Invalid backend argument.", str);
-  return false;
 }
 
 /**
