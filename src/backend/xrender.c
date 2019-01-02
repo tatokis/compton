@@ -20,9 +20,9 @@ typedef struct _xrender_data {
 	/// The painting target, it is either the root or the overlay
 	xcb_render_picture_t target;
 	/// A back buffer
-	xcb_render_picture_t back;
+	xcb_render_picture_t back[2];
 	/// The corresponding pixmap to the back buffer
-	xcb_pixmap_t back_pixmap;
+	xcb_pixmap_t back_pixmap[2];
 	/// The original root window content, usually the wallpaper.
 	/// We save it so we don't loss the wallpaper when we paint over
 	/// it.
@@ -40,6 +40,16 @@ typedef struct _xrender_data {
 
 	/// 1x1 picture of the shadow color
 	xcb_render_picture_t shadow_pixel;
+
+	/// Whether the _current_ back_pixmap is busy
+	/// The non-current back_pixmap is always busy
+	bool pixmap_busy;
+	xcb_special_event_t *q;
+	uint32_t stamp;
+
+	uint64_t last_msc;
+	/// The current back_pixmap used for drawing
+	uint8_t current;
 } xrender_data;
 
 #if 0
@@ -105,7 +115,7 @@ static void compose(void *backend_data, session_t *ps, win *w, void *win_data, i
 		// Crop the shadow to the damage region. If we draw out side of
 		// the damage region, we could be drawing over perfectly good
 		// content, and destroying it.
-		pixman_region32_intersect(&reg_tmp, &reg_tmp, (region_t *)reg_paint);
+		//pixman_region32_intersect(&reg_tmp, &reg_tmp, (region_t *)reg_paint);
 
 #ifdef CONFIG_XINERAMA
 		if (ps->o.xinerama_shadow_crop && w->xinerama_scr >= 0 &&
@@ -127,10 +137,10 @@ static void compose(void *backend_data, session_t *ps, win *w, void *win_data, i
 
 		// Detect if the region is empty before painting
 		if (pixman_region32_not_empty(&reg_tmp)) {
-			x_set_picture_clip_region(ps, xd->back, 0, 0, &reg_tmp);
+			x_set_picture_clip_region(ps, xd->back[xd->current], 0, 0, &reg_tmp);
 			xcb_render_composite(
 			    ps->c, XCB_RENDER_PICT_OP_OVER, wd->shadow_pict, alpha_pict,
-			    xd->back, 0, 0, 0, 0, dst_x + w->shadow_dx,
+			    xd->back[xd->current], 0, 0, 0, 0, dst_x + w->shadow_dx,
 			    dst_y + w->shadow_dy, w->shadow_width, w->shadow_height);
 		}
 		pixman_region32_fini(&reg_tmp);
@@ -140,9 +150,10 @@ static void compose(void *backend_data, session_t *ps, win *w, void *win_data, i
 	// Clip region of rendered_pict might be set during rendering, clear it to make
 	// sure we get everything into the buffer
 	x_clear_picture_clip_region(ps, wd->rendered_pict);
+	x_clear_picture_clip_region(ps, xd->back[xd->current]);
 
-	x_set_picture_clip_region(ps, xd->back, 0, 0, reg_paint);
-	xcb_render_composite(ps->c, op, wd->rendered_pict, alpha_pict, xd->back, 0, 0, 0,
+	//x_set_picture_clip_region(ps, xd->back[xd->current], 0, 0, reg_paint);
+	xcb_render_composite(ps->c, op, wd->rendered_pict, alpha_pict, xd->back[xd->current], 0, 0, 0,
 	                     0, dst_x, dst_y, w->widthb, w->heightb);
 }
 
@@ -179,10 +190,11 @@ blur(void *backend_data, session_t *ps, double opacity, const region_t *reg_pain
 
 	x_set_picture_clip_region(ps, tmp_picture[0], 0, 0, &clip);
 	x_set_picture_clip_region(ps, tmp_picture[1], 0, 0, &clip);
+	x_clear_picture_clip_region(ps, xd->back[xd->current]);
 
 	// The multipass blur implemented here is not correct, but this is what old
 	// compton did anyway. XXX
-	xcb_render_picture_t src_pict = xd->back, dst_pict = tmp_picture[0];
+	xcb_render_picture_t src_pict = xd->back[xd->current], dst_pict = tmp_picture[0];
 	auto alpha_pict = xd->alpha_pict[(int)(opacity * 255)];
 	int current = 0;
 	int src_x = reg->x1, src_y = reg->y1;
@@ -214,7 +226,7 @@ blur(void *backend_data, session_t *ps, double opacity, const region_t *reg_pain
 		} else {
 			// This is the last pass, and this is also not the first
 			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_OVER, src_pict,
-			                     alpha_pict, xd->back, 0, 0, 0, 0, reg->x1,
+			                     alpha_pict, xd->back[xd->current], 0, 0, 0, 0, reg->x1,
 			                     reg->y1, width, height);
 		}
 
@@ -230,7 +242,7 @@ blur(void *backend_data, session_t *ps, double opacity, const region_t *reg_pain
 	// There is only 1 pass
 	if (i == 1) {
 		xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_OVER, src_pict, alpha_pict,
-		                     xd->back, 0, 0, 0, 0, reg->x1, reg->y1, width, height);
+		                     xd->back[xd->current], 0, 0, 0, 0, reg->x1, reg->y1, width, height);
 	}
 
 	xcb_render_free_picture(ps->c, tmp_picture[0]);
@@ -271,7 +283,8 @@ static void render_win(void *backend_data, session_t *ps, win *w, void *win_data
 
 	if (w->invert_color) {
 		// Handle invert color
-		x_set_picture_clip_region(ps, wd->rendered_pict, 0, 0, &reg_paint_local);
+		//x_set_picture_clip_region(ps, wd->rendered_pict, 0, 0, &reg_paint_local);
+		x_clear_picture_clip_region(ps, wd->rendered_pict);
 
 		xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_DIFFERENCE,
 		                     xd->white_pixel, None, wd->rendered_pict, 0, 0, 0, 0,
@@ -410,10 +423,13 @@ static void *init(session_t *ps) {
 		abort();
 	}
 
-	xd->back_pixmap =
-	    x_create_pixmap(ps, pictfmt->depth, ps->root, ps->root_width, ps->root_height);
-	xd->back =
-	    x_create_picture_with_pictfmt_and_pixmap(ps, pictfmt, xd->back_pixmap, 0, NULL);
+	for (int i = 0; i < 2; i++) {
+		xd->back_pixmap[i] = x_create_pixmap(ps, pictfmt->depth, ps->root,
+		                                  ps->root_width, ps->root_height);
+		xd->back[i] = x_create_picture_with_pictfmt_and_pixmap(
+		    ps, pictfmt, xd->back_pixmap[i], 0, NULL);
+	}
+	xd->current = 0;
 
 	xcb_pixmap_t root_pixmap = x_get_root_back_pixmap(ps);
 	if (root_pixmap == XCB_NONE) {
@@ -423,18 +439,18 @@ static void *init(session_t *ps) {
 		    ps, ps->vis, root_pixmap, 0, NULL);
 	}
 
+	xd->pixmap_busy = false;
+	xd->last_msc = 0;
+
 	if (ps->present_exists) {
-		xd->idle_fence = xcb_generate_id(ps->c);
-		// To make sure we won't get stuck waiting for the idle_fence, we maintain
-		// this invariant: the idle_fence is either triggered, or is in the
-		// process of being triggered (e.g. by xcb_present_pixmap)
-		auto e = xcb_request_check(
-		    ps->c, xcb_sync_create_fence(ps->c, ps->root, xd->idle_fence, 1));
-		if (e) {
-			log_error("Cannot create a fence, vsync might not work");
-			xd->idle_fence = XCB_NONE;
-			free(e);
-		}
+		auto id = xcb_generate_id(ps->c);
+		auto e =
+		    xcb_request_check(ps->c, xcb_present_select_input_checked(
+		                                 ps->c, id, xd->target_win,
+		                                 XCB_PRESENT_EVENT_MASK_COMPLETE_NOTIFY));
+		xd->q = xcb_register_for_special_xge(ps->c, &xcb_present_id, id, &xd->stamp);
+		assert(xd->q);
+		assert(!e);
 	}
 	return xd;
 }
@@ -455,16 +471,21 @@ static void *root_change(void *backend_data, session_t *ps) {
 
 static void prepare(void *backend_data, session_t *ps, const region_t *reg_paint) {
 	struct _xrender_data *xd = backend_data;
-	if (ps->o.vsync != VSYNC_NONE && ps->present_exists) {
-		xcb_sync_await_fence(ps->c, 1, &xd->idle_fence);
+	if (xd->pixmap_busy) {
+		xcb_present_complete_notify_event_t *e =
+		    (void *)xcb_wait_for_special_event(ps->c, xd->q);
+		xd->last_msc = e->msc;
+		xd->pixmap_busy = false;
+		log_trace("MSC is %ld", xd->last_msc);
 	}
 
 	// Paint the root pixmap (i.e. wallpaper)
 	// Limit the paint area
-	x_set_picture_clip_region(ps, xd->back, 0, 0, reg_paint);
+	//x_set_picture_clip_region(ps, xd->back[xd->current], 0, 0, reg_paint);
+	x_clear_picture_clip_region(ps, xd->back[xd->current]);
 
 	xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, xd->root_pict, XCB_NONE,
-	                     xd->back, 0, 0, 0, 0, 0, 0, ps->root_width, ps->root_height);
+	                     xd->back[xd->current], 0, 0, 0, 0, 0, 0, ps->root_width, ps->root_height);
 }
 
 static void present(void *backend_data, session_t *ps) {
@@ -473,18 +494,20 @@ static void present(void *backend_data, session_t *ps) {
 	if (ps->o.vsync != VSYNC_NONE && ps->present_exists) {
 		// Only reset the fence when we are sure we will trigger it again.
 		// To make sure rendering won't get stuck if user toggles vsync on the fly.
-		xcb_sync_reset_fence(ps->c, xd->idle_fence);
-		xcb_present_pixmap(ps->c, xd->target_win, xd->back_pixmap, 0, XCB_NONE,
-		                   XCB_NONE, 0, 0, XCB_NONE, XCB_NONE, xd->idle_fence, 0,
-		                   0, 1, 0, 0, NULL);
+		xcb_present_pixmap(ps->c, xd->target_win, xd->back_pixmap[xd->current], 0, XCB_NONE,
+		                   XCB_NONE, 0, 0, XCB_NONE, XCB_NONE, XCB_NONE,
+		                   XCB_PRESENT_OPTION_NONE, xd->last_msc + 1, 1, 0, 0, NULL);
+		xd->current = !xd->current;
+		xd->pixmap_busy = true;
 	} else {
+		return;
 		// compose() sets clip region, so clear it first to make
 		// sure we update the whole screen.
-		x_clear_picture_clip_region(ps, xd->back);
+		x_clear_picture_clip_region(ps, xd->back[xd->current]);
 
 		// TODO buffer-age-like optimization might be possible here.
 		//      but that will require a different backend API
-		xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, xd->back, None,
+		xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, xd->back[xd->current], None,
 		                     xd->target, 0, 0, 0, 0, 0, 0, ps->root_width,
 		                     ps->root_height);
 	}
