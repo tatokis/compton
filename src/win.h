@@ -64,6 +64,17 @@ typedef enum {
   WMODE_SOLID, // The window is opaque including the frame
 } winmode_t;
 
+typedef enum {
+  // The window is been unmapped, meaning unmap_win is called, but
+  // the window might need fading. This also implies this window
+  // was in mapped state.
+  WSTATE_UNMAPPING,
+  // The window is mapped
+  WSTATE_MAPPED,
+  // The window is unmapped
+  WSTATE_UNMAPPED,
+} winstate_t;
+
 /**
  * About coordinate systems
  *
@@ -88,6 +99,9 @@ struct win {
   // Core members
   /// ID of the top-level frame window.
   xcb_window_t id;
+  /// The "mapped state" of this window, doesn't necessary
+  /// match X mapped state, because of fading.
+  winstate_t state;
   /// Window attributes.
   xcb_get_window_attributes_reply_t a;
   xcb_get_geometry_reply_t g;
@@ -373,6 +387,11 @@ bool win_has_alpha(win *w);
 
 /// check if reg_ignore_valid is true for all windows above us
 bool win_is_region_ignore_valid(session_t *ps, win *w);
+
+/// Free a struct win
+/// prev = pointer to the `next` field of the previous
+///        win in the list
+void free_win(session_t *ps, win *w);
 
 static inline region_t
 win_get_bounding_shape_global_by_val(win *w) {

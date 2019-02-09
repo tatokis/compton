@@ -599,6 +599,7 @@ void calc_win_size(session_t *ps, win *w) {
   w->flags |= WFLAG_SIZE_CHANGE;
   // Invalidate the shadow we built
   free_paint(ps, &w->shadow_paint);
+  // NEWBK invalid window data
 }
 
 /**
@@ -733,6 +734,36 @@ void win_recheck_client(session_t *ps, win *w) {
   win_mark_client(ps, w, cw);
 }
 
+/**
+ * Free all resources in a <code>struct _win</code>.
+ */
+void free_win(session_t *ps, win *w) {
+  // Clear active_win if it's pointing to the destroyed window
+  if (w == ps->active_win)
+    ps->active_win = NULL;
+
+  // No need to call backend release_win here because
+  // finish_unmap_win should've done that for us.
+  assert(w->win_data == NULL);
+  pixman_region32_fini(&w->bounding_shape);
+  // BadDamage may be thrown if the window is destroyed
+  set_ignore_cookie(ps,
+      xcb_damage_destroy(ps->c, w->damage));
+  rc_region_unref(&w->reg_ignore);
+  free(w->name);
+  free(w->class_instance);
+  free(w->class_general);
+  free(w->role);
+
+  // Drop w from all prev_trans to avoid accessing freed memory in
+  // repair_win()
+  for (win *w2 = ps->list; w2; w2 = w2->next)
+    if (w == w2->prev_trans)
+      w2->prev_trans = NULL;
+
+  free(w);
+}
+
 // TODO: probably split into win_new (in win.c) and add_win (in compton.c)
 bool add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
   static const win win_def = {
@@ -759,6 +790,7 @@ bool add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
 
       .widthb = 0,
       .heightb = 0,
+      .state = WSTATE_UNMAPPED,
       .destroying = false,
       .bounding_shaped = false,
       .rounded_corners = false,
@@ -874,7 +906,7 @@ bool add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
   assert(map_state == XCB_MAP_STATE_VIEWABLE || map_state == XCB_MAP_STATE_UNMAPPED);
   new->a.map_state = XCB_MAP_STATE_UNMAPPED;
 
-  if (InputOutput == new->a._class) {
+  if (new->a._class == XCB_WINDOW_CLASS_INPUT_OUTPUT) {
     // Create Damage for window
     new->damage = xcb_generate_id(ps->c);
     xcb_generic_error_t *e = xcb_request_check(ps->c,
@@ -888,6 +920,8 @@ bool add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
   }
 
   calc_win_size(ps, new);
+
+  log_trace("Window %#010x: %s %p", id, new->name, new->pictfmt);
 
   new->next = *p;
   *p = new;
@@ -1202,6 +1236,16 @@ void win_update_bounding_shape(session_t *ps, win *w) {
   free_paint(ps, &w->paint);
   free_paint(ps, &w->shadow_paint);
   //log_trace("free out dated pict");
+  // NEWBK merge
+  // Window shape changed, we should free win_data
+  if (ps->redirected && w->state == WSTATE_MAPPED) {
+    // Note we only do this when screen is redirected, because
+    // otherwise win_data is not valid
+    backend_info_t *bi = backend_list[ps->o.backend];
+    bi->release_win(ps->backend_data, ps, w, w->win_data);
+    w->win_data = bi->prepare_win(ps->backend_data, ps, w);
+    //log_trace("free out dated pict");
+  }
 
   win_on_factor_change(ps, w);
 }
