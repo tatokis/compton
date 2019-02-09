@@ -24,7 +24,7 @@
 #include "log.h"
 #include "types.h"
 #include "region.h"
-#include "render.h"
+#include "backend/backend.h"
 
 #ifdef CONFIG_DBUS
 #include "dbus.h"
@@ -598,8 +598,7 @@ void calc_win_size(session_t *ps, win *w) {
   calc_shadow_geometry(ps, w);
   w->flags |= WFLAG_SIZE_CHANGE;
   // Invalidate the shadow we built
-  free_paint(ps, &w->shadow_paint);
-  // NEWBK invalid window data
+  // NEWBK XXX invalid window data?
 }
 
 /**
@@ -781,7 +780,6 @@ bool add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
       .ever_damaged = false,
       .damage = XCB_NONE,
       .pixmap_damaged = false,
-      .paint = PAINT_INIT,
       .flags = 0,
       .need_configure = false,
       .queue_configure = {},
@@ -838,7 +836,6 @@ bool add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
       .shadow_dy = 0,
       .shadow_width = 0,
       .shadow_height = 0,
-      .shadow_paint = PAINT_INIT,
       .prop_shadow = -1,
 
       .dim = false,
@@ -1232,11 +1229,6 @@ void win_update_bounding_shape(session_t *ps, win *w) {
   if (w->bounding_shaped && ps->o.detect_rounded_corners)
     win_rounded_corners(ps, w);
 
-  // Window shape changed, we should free old wpaint and shadow pict
-  free_paint(ps, &w->paint);
-  free_paint(ps, &w->shadow_paint);
-  //log_trace("free out dated pict");
-  // NEWBK merge
   // Window shape changed, we should free win_data
   if (ps->redirected && w->state == WSTATE_MAPPED) {
     // Note we only do this when screen is redirected, because

@@ -17,27 +17,10 @@
 #include "region.h"
 #include "types.h"
 #include "c2.h"
-#include "render.h"
 #include "utils.h"
 
 typedef struct session session_t;
 typedef struct _glx_texture glx_texture_t;
-
-#ifdef CONFIG_OPENGL
-// FIXME this type should be in opengl.h
-//       it is very unideal for it to be here
-typedef struct {
-  /// Framebuffer used for blurring.
-  GLuint fbo;
-  /// Textures used for blurring.
-  GLuint textures[2];
-  /// Width of the textures.
-  int width;
-  /// Height of the textures.
-  int height;
-} glx_blur_cache_t;
-#endif
-
 typedef enum {
   WINTYPE_UNKNOWN,
   WINTYPE_DESKTOP,
@@ -119,8 +102,6 @@ struct win {
   bool pixmap_damaged;
   /// Damage of the window.
   xcb_damage_damage_t damage;
-  /// Paint info of the window.
-  paint_t paint;
 
   /// Bounding shape of the window. In local coordinates.
   /// See above about coordinate systems.
@@ -247,8 +228,6 @@ struct win {
   int shadow_width;
   /// Height of shadow. Affected by window size and commandline argument.
   int shadow_height;
-  /// Picture to render shadow. Affected by window size.
-  paint_t shadow_paint;
   /// The value of _COMPTON_SHADOW attribute of the window. Below 0 for
   /// none.
   long prop_shadow;
@@ -269,11 +248,6 @@ struct win {
   bool blur_background;
   /// Background state on last paint.
   bool blur_background_last;
-
-#ifdef CONFIG_OPENGL
-  /// Textures and FBO background blur use.
-  glx_blur_cache_t glx_blur_cache;
-#endif
 };
 
 int win_get_name(session_t *ps, win *w);

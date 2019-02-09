@@ -83,7 +83,6 @@
 #include "win.h"
 #include "region.h"
 #include "kernel.h"
-#include "render.h"
 #include "config.h"
 #include "log.h"
 #include "compiler.h"
@@ -189,7 +188,6 @@ typedef void (*GLDEBUGPROC) (GLenum source, GLenum type,
 typedef void (*f_DebugMessageCallback) (GLDEBUGPROC, void *userParam);
 #endif
 
-#ifdef CONFIG_OPENGL
 typedef GLsync (*f_FenceSync) (GLenum condition, GLbitfield flags);
 typedef GLboolean (*f_IsSync) (GLsync sync);
 typedef void (*f_DeleteSync) (GLsync sync);
@@ -200,56 +198,6 @@ typedef void (*f_WaitSync) (GLsync sync, GLbitfield flags,
 typedef GLsync (*f_ImportSyncEXT) (GLenum external_sync_type,
     GLintptr external_sync, GLbitfield flags);
 #endif
-
-/// @brief Wrapper of a binded GLX texture.
-struct _glx_texture {
-  GLuint texture;
-  GLXPixmap glpixmap;
-  xcb_pixmap_t pixmap;
-  GLenum target;
-  unsigned width;
-  unsigned height;
-  bool y_inverted;
-};
-
-#ifdef CONFIG_OPENGL
-typedef struct {
-  /// Fragment shader for blur.
-  GLuint frag_shader;
-  /// GLSL program for blur.
-  GLuint prog;
-  /// Location of uniform "offset_x" in blur GLSL program.
-  GLint unifm_offset_x;
-  /// Location of uniform "offset_y" in blur GLSL program.
-  GLint unifm_offset_y;
-  /// Location of uniform "factor_center" in blur GLSL program.
-  GLint unifm_factor_center;
-} glx_blur_pass_t;
-
-typedef struct glx_prog_main {
-  /// GLSL program.
-  GLuint prog;
-  /// Location of uniform "opacity" in window GLSL program.
-  GLint unifm_opacity;
-  /// Location of uniform "invert_color" in blur GLSL program.
-  GLint unifm_invert_color;
-  /// Location of uniform "tex" in window GLSL program.
-  GLint unifm_tex;
-} glx_prog_main_t;
-
-#define GLX_PROG_MAIN_INIT { \
-  .prog = 0, \
-  .unifm_opacity = -1, \
-  .unifm_invert_color = -1, \
-  .unifm_tex = -1, \
-}
-
-#endif
-#else
-struct glx_prog_main { };
-#endif
-
-#define PAINT_INIT { .pixmap = XCB_NONE, .pict = XCB_NONE }
 
 /// Linked list type of atoms.
 typedef struct _latom {
@@ -281,9 +229,6 @@ typedef struct {
   f_ImportSyncEXT glImportSyncEXT;
   /// Current GLX Z value.
   int z;
-#ifdef CONFIG_OPENGL
-  glx_blur_pass_t blur_passes[MAX_BLUR_PASS];
-#endif
 } glx_session_t;
 
 #define CGLX_SESSION_INIT { .context = NULL }
@@ -337,28 +282,10 @@ typedef struct session {
   // Damage root_damage;
   /// X Composite overlay window. Used if <code>--paint-on-overlay</code>.
   xcb_window_t overlay;
-  /// Whether the root tile is filled by compton.
-  bool root_tile_fill;
-  /// Picture of the root window background.
-  paint_t root_tile_paint;
   /// A region of the size of the screen.
   region_t screen_reg;
-  /// Picture of root window. Destination of painting in no-DBE painting
-  /// mode.
-  xcb_render_picture_t root_picture;
-  /// A Picture acting as the painting target.
-  xcb_render_picture_t tgt_picture;
-  /// Temporary buffer to paint to before sending to display.
-  paint_t tgt_buffer;
   /// Window ID of the window we register as a symbol.
   xcb_window_t reg_win;
-#ifdef CONFIG_OPENGL
-  /// Pointer to GLX data.
-  glx_session_t *psglx;
-  /// Custom GLX program used for painting window.
-  // XXX should be in glx_session_t
-  glx_prog_main_t glx_prog_win;
-#endif
   /// Sync fence to sync draw operations
   xcb_sync_fence_t sync_fence;
 
@@ -382,8 +309,6 @@ typedef struct session {
   int ndamage;
   /// Whether all windows are currently redirected.
   bool redirected;
-  /// Pre-generated alpha pictures.
-  xcb_render_picture_t *alpha_picts;
   /// Time of last fading. In milliseconds.
   unsigned long fade_time;
   /// Head pointer of the error ignore linked list.
@@ -421,12 +346,6 @@ typedef struct session {
   xcb_window_t active_leader;
 
   // === Shadow/dimming related ===
-  /// 1x1 black Picture.
-  xcb_render_picture_t black_picture;
-  /// 1x1 Picture of the shadow color.
-  xcb_render_picture_t cshadow_picture;
-  /// 1x1 white Picture.
-  xcb_render_picture_t white_picture;
   /// Gaussian map of shadow.
   conv *gaussian_map;
   // for shadow precomputation
@@ -814,15 +733,6 @@ find_toplevel(session_t *ps, xcb_window_t id) {
   }
 
   return NULL;
-}
-
-/**
- * Check if current backend uses GLX.
- */
-static inline bool
-bkend_use_glx(session_t *ps) {
-  return BKEND_GLX == ps->o.backend
-    || BKEND_XR_GLX_HYBRID == ps->o.backend;
 }
 
 /**

@@ -1195,30 +1195,8 @@ cdbus_process_opts_set(session_t *ps, DBusMessage *msg) {
     const char * val = NULL;
     if (!cdbus_msg_get_arg(msg, 1, DBUS_TYPE_STRING, &val))
       return false;
-    vsync_deinit(ps);
-    auto tmp_vsync = parse_vsync(val);
-    if (tmp_vsync >= NUM_VSYNC) {
-      log_error("Failed to parse vsync: invalid value %s.", val);
-      cdbus_reply_err(ps, msg, CDBUS_ERROR_BADARG, CDBUS_ERROR_BADARG_S, 1,
-                      "Value invalid.");
-      return true;
-    }
-
-    auto old_vsync = ps->o.vsync;
-    ps->o.vsync = tmp_vsync;
-    if (!vsync_init(ps)) {
-      // Trying to revert back to original vsync values
-      log_error("Failed to initialize specified VSync method.");
-      ps->o.vsync = old_vsync;
-      if (!vsync_init(ps)) {
-        log_error("Failed to revert back to original VSync method.");
-        ps->o.vsync = VSYNC_NONE;
-      }
-      cdbus_reply_err(ps, msg, CDBUS_ERROR_CUSTOM, CDBUS_ERROR_CUSTOM_S,
-                      "Failed to initialize specified VSync method.");
-    } else
-      goto cdbus_process_opts_set_success;
-    return true;
+    // Enable/disable vsync TODO
+    goto cdbus_process_opts_set_success;
   }
 
   // redirected_force
