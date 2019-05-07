@@ -69,13 +69,18 @@ typedef struct _xrender_data {
 	xcb_special_event_t *present_event;
 } xrender_data;
 
-struct _xrender_image_data {
+struct _xrender_image {
 	// Pixmap that the client window draws to,
 	// it will contain the content of client window.
 	xcb_pixmap_t pixmap;
 	// A Picture links to the Pixmap
 	xcb_render_picture_t pict;
 	int width, height;
+	int refcount;
+};
+
+struct _xrender_image_data {
+	struct _xrender_image *inner;
 	// The effective size of the image
 	int ewidth, eheight;
 	bool has_alpha;
@@ -83,6 +88,8 @@ struct _xrender_image_data {
 	xcb_visualid_t visual;
 	uint8_t depth;
 	bool owned;
+
+	struct _xrender_image storage[];
 };
 
 static void compose(backend_t *base, void *img_data, int dst_x, int dst_y,
@@ -97,12 +104,13 @@ static void compose(backend_t *base, void *img_data, int dst_x, int dst_y,
 
 	// Clip region of rendered_pict might be set during rendering, clear it to make
 	// sure we get everything into the buffer
-	x_clear_picture_clip_region(base->c, img->pict);
+	x_clear_picture_clip_region(base->c, img->inner->pict);
 
 	x_set_picture_clip_region(base->c, xd->back[xd->curr_back], 0, 0, &reg);
-	xcb_render_composite(base->c, op, img->pict, alpha_pict, xd->back[xd->curr_back],
-	                     0, 0, 0, 0, to_i16_checked(dst_x), to_i16_checked(dst_y),
-	                     to_u16_checked(img->ewidth), to_u16_checked(img->eheight));
+	xcb_render_composite(base->c, op, img->inner->pict, alpha_pict,
+	                     xd->back[xd->curr_back], 0, 0, 0, 0, to_i16_checked(dst_x),
+	                     to_i16_checked(dst_y), to_u16_checked(img->ewidth),
+	                     to_u16_checked(img->eheight));
 	pixman_region32_fini(&reg);
 }
 
@@ -238,18 +246,20 @@ bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, bool 
 		return NULL;
 	}
 
-	auto img = ccalloc(1, struct _xrender_image_data);
+	struct _xrender_image_data *img =
+	    cvalloc(sizeof(struct _xrender_image_data) + sizeof(struct _xrender_image));
+	img->inner = img->storage;
 	img->depth = (uint8_t)fmt.visual_depth;
-	img->width = img->ewidth = r->width;
-	img->height = img->eheight = r->height;
-	img->pixmap = pixmap;
+	img->inner->width = img->ewidth = r->width;
+	img->inner->height = img->eheight = r->height;
+	img->inner->pixmap = pixmap;
 	img->opacity = 1;
 	img->has_alpha = fmt.alpha_size != 0;
-	img->pict =
+	img->inner->pict =
 	    x_create_picture_with_visual_and_pixmap(base->c, fmt.visual, pixmap, 0, NULL);
 	img->owned = owned;
 	img->visual = fmt.visual;
-	if (img->pict == XCB_NONE) {
+	if (img->inner->pict == XCB_NONE) {
 		free(img);
 		return NULL;
 	}
@@ -258,9 +268,9 @@ bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, bool 
 
 static void release_image(backend_t *base, void *image) {
 	struct _xrender_image_data *img = image;
-	xcb_render_free_picture(base->c, img->pict);
+	xcb_render_free_picture(base->c, img->inner->pict);
 	if (img->owned) {
-		xcb_free_pixmap(base->c, img->pixmap);
+		xcb_free_pixmap(base->c, img->inner->pixmap);
 	}
 	free(img);
 }
@@ -367,17 +377,19 @@ static bool image_op(backend_t *base, enum image_operations op, void *image,
 
 	pixman_region32_init(&reg);
 
-	const auto tmpw = to_u16_checked(img->width);
-	const auto tmph = to_u16_checked(img->height);
+	log_error("%d %d", img->inner->width, img->inner->height);
+	const auto tmpw = to_u16_checked(img->inner->width);
+	const auto tmph = to_u16_checked(img->inner->height);
 	switch (op) {
 	case IMAGE_OP_INVERT_COLOR_ALL:
-		x_set_picture_clip_region(base->c, img->pict, 0, 0, reg_visible);
+		x_set_picture_clip_region(base->c, img->inner->pict, 0, 0, reg_visible);
 		if (img->has_alpha) {
-			auto tmp_pict =
-			    x_create_picture_with_visual(base->c, base->root, img->width,
-			                                 img->height, img->visual, 0, NULL);
-			xcb_render_composite(base->c, XCB_RENDER_PICT_OP_SRC, img->pict,
-			                     XCB_NONE, tmp_pict, 0, 0, 0, 0, 0, 0, tmpw, tmph);
+			auto tmp_pict = x_create_picture_with_visual(
+			    base->c, base->root, img->inner->width, img->inner->height,
+			    img->visual, 0, NULL);
+			xcb_render_composite(base->c, XCB_RENDER_PICT_OP_SRC,
+			                     img->inner->pict, XCB_NONE, tmp_pict, 0, 0,
+			                     0, 0, 0, 0, tmpw, tmph);
 
 			xcb_render_composite(base->c, XCB_RENDER_PICT_OP_DIFFERENCE,
 			                     xd->white_pixel, XCB_NONE, tmp_pict, 0, 0, 0,
@@ -385,17 +397,17 @@ static bool image_op(backend_t *base, enum image_operations op, void *image,
 			// We use an extra PictOpInReverse operation to get correct pixel
 			// alpha. There could be a better solution.
 			xcb_render_composite(base->c, XCB_RENDER_PICT_OP_IN_REVERSE,
-			                     tmp_pict, XCB_NONE, img->pict, 0, 0, 0, 0, 0,
-			                     0, tmpw, tmph);
+			                     tmp_pict, XCB_NONE, img->inner->pict, 0, 0,
+			                     0, 0, 0, 0, tmpw, tmph);
 			xcb_render_free_picture(base->c, tmp_pict);
 		} else {
 			xcb_render_composite(base->c, XCB_RENDER_PICT_OP_DIFFERENCE,
-			                     xd->white_pixel, XCB_NONE, img->pict, 0, 0,
-			                     0, 0, 0, 0, tmpw, tmph);
+			                     xd->white_pixel, XCB_NONE, img->inner->pict,
+			                     0, 0, 0, 0, 0, 0, tmpw, tmph);
 		}
 		break;
 	case IMAGE_OP_DIM_ALL:
-		x_set_picture_clip_region(base->c, img->pict, 0, 0, reg_visible);
+		x_set_picture_clip_region(base->c, img->inner->pict, 0, 0, reg_visible);
 
 		xcb_render_color_t color = {
 		    .red = 0, .green = 0, .blue = 0, .alpha = (uint16_t)(0xffff * dargs[0])};
@@ -408,8 +420,8 @@ static bool image_op(backend_t *base, enum image_operations op, void *image,
 		    .height = tmph,
 		};
 
-		xcb_render_fill_rectangles(base->c, XCB_RENDER_PICT_OP_OVER, img->pict,
-		                           color, 1, &rect);
+		xcb_render_fill_rectangles(base->c, XCB_RENDER_PICT_OP_OVER,
+		                           img->inner->pict, color, 1, &rect);
 		break;
 	case IMAGE_OP_APPLY_ALPHA:
 		assert(reg_op);
@@ -423,9 +435,9 @@ static bool image_op(backend_t *base, enum image_operations op, void *image,
 		}
 
 		auto alpha_pict = xd->alpha_pict[(int)(dargs[0] * 255)];
-		x_set_picture_clip_region(base->c, img->pict, 0, 0, &reg);
-		xcb_render_composite(base->c, XCB_RENDER_PICT_OP_IN, img->pict, XCB_NONE,
-		                     alpha_pict, 0, 0, 0, 0, 0, 0, tmpw, tmph);
+		x_set_picture_clip_region(base->c, img->inner->pict, 0, 0, &reg);
+		xcb_render_composite(base->c, XCB_RENDER_PICT_OP_IN, img->inner->pict,
+		                     XCB_NONE, alpha_pict, 0, 0, 0, 0, 0, 0, tmpw, tmph);
 		img->has_alpha = true;
 		break;
 	case IMAGE_OP_RESIZE_TILE:
@@ -441,34 +453,37 @@ static bool image_op(backend_t *base, enum image_operations op, void *image,
 static void *copy(backend_t *base, const void *image, const region_t *reg) {
 	const struct _xrender_image_data *img = image;
 	struct _xrender_data *xd = (void *)base;
-	auto new_img = ccalloc(1, struct _xrender_image_data);
+	struct _xrender_image_data *new_img =
+	    cvalloc(sizeof(struct _xrender_image_data) + sizeof(struct _xrender_image));
 	assert(img->visual != XCB_NONE);
-	log_trace("xrender: copying %#010x visual %#x", img->pixmap, img->visual);
+	log_trace("xrender: copying %#010x visual %#x", img->inner->pixmap, img->visual);
 	*new_img = *img;
-	x_set_picture_clip_region(base->c, img->pict, 0, 0, reg);
-	new_img->pixmap =
-	    x_create_pixmap(base->c, img->depth, base->root, img->width, img->height);
+	new_img->inner = new_img->storage;
+	x_set_picture_clip_region(base->c, img->inner->pict, 0, 0, reg);
+	new_img->inner->pixmap = x_create_pixmap(base->c, img->depth, base->root,
+	                                         img->inner->width, img->inner->height);
 	new_img->opacity = 1;
 	new_img->owned = true;
-	if (new_img->pixmap == XCB_NONE) {
+	if (new_img->inner->pixmap == XCB_NONE) {
 		log_error("Failed to create pixmap for copy");
 		free(new_img);
 		return NULL;
 	}
-	new_img->pict = x_create_picture_with_visual_and_pixmap(base->c, img->visual,
-	                                                        new_img->pixmap, 0, NULL);
-	if (new_img->pict == XCB_NONE) {
+	new_img->inner->pict = x_create_picture_with_visual_and_pixmap(
+	    base->c, img->visual, new_img->inner->pixmap, 0, NULL);
+	if (new_img->inner->pict == XCB_NONE) {
 		log_error("Failed to create picture for copy");
-		xcb_free_pixmap(base->c, new_img->pixmap);
+		xcb_free_pixmap(base->c, new_img->inner->pixmap);
 		free(new_img);
 		return NULL;
 	}
 
 	xcb_render_picture_t alpha_pict =
 	    img->opacity == 1 ? XCB_NONE : xd->alpha_pict[(int)(img->opacity * 255)];
-	xcb_render_composite(base->c, XCB_RENDER_PICT_OP_SRC, img->pict, alpha_pict,
-	                     new_img->pict, 0, 0, 0, 0, 0, 0, to_u16_checked(img->width),
-	                     to_u16_checked(img->height));
+	xcb_render_composite(base->c, XCB_RENDER_PICT_OP_SRC, img->inner->pict,
+	                     alpha_pict, new_img->inner->pict, 0, 0, 0, 0, 0, 0,
+	                     to_u16_checked(img->inner->width),
+	                     to_u16_checked(img->inner->height));
 	return new_img;
 }
 
